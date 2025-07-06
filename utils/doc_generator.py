@@ -189,13 +189,8 @@ class DocumentationGenerator:
             doc_parts.append("")
             doc_parts.append("**Methods:**")
             for method in cls['methods']:
-                method_signature = self._build_signature(method)
-                doc_parts.append(f"- `{method_signature}`")
-                if self.include_docstrings and method.get('docstring'):
-                    # Add first line of method docstring
-                    first_line = method['docstring'].split('\n')[0].strip()
-                    if first_line:
-                        doc_parts.append(f"  - {first_line}")
+                doc_parts.append("")
+                doc_parts.append(self._format_method_detailed(method))
         
         # Class metrics
         if self.include_complexity:
@@ -204,6 +199,81 @@ class DocumentationGenerator:
             doc_parts.append(f"- Number of Methods: {len(cls.get('methods', []))}")
             doc_parts.append(f"- Number of Attributes: {len(cls.get('attributes', []))}")
             doc_parts.append(f"- Lines of Code: {cls.get('lines_of_code', 'N/A')}")
+        
+        return "\n".join(doc_parts)
+    
+    def _format_method_detailed(self, method: Dict[str, Any]) -> str:
+        """Format detailed method documentation within a class."""
+        doc_parts = []
+        
+        # Method signature
+        signature = self._build_signature(method)
+        doc_parts.append(f"#### `{signature}`")
+        
+        # Location info
+        doc_parts.append(f"*Line {method['line_number']}*")
+        
+        # Method purpose from docstring
+        if self.include_docstrings and method.get('docstring'):
+            doc_parts.append("")
+            doc_parts.append("**Purpose:**")
+            
+            # Extract the main purpose (first paragraph of docstring)
+            docstring_lines = method['docstring'].strip().split('\n')
+            purpose_lines = []
+            for line in docstring_lines:
+                line = line.strip()
+                if not line:  # Empty line indicates end of purpose section
+                    break
+                purpose_lines.append(line)
+            
+            if purpose_lines:
+                doc_parts.append(' '.join(purpose_lines))
+            
+            # Add full docstring if it contains Args/Returns sections
+            if any(keyword in method['docstring'].lower() for keyword in ['args:', 'arguments:', 'returns:', 'return:']):
+                doc_parts.append("")
+                doc_parts.append("**Full Documentation:**")
+                doc_parts.append("```")
+                doc_parts.append(method['docstring'])
+                doc_parts.append("```")
+        
+        # Parameters
+        if method.get('parameters'):
+            doc_parts.append("")
+            doc_parts.append("**Parameters:**")
+            for param in method['parameters']:
+                param_doc = f"- `{param['name']}`"
+                if self.include_type_hints and param.get('annotation'):
+                    param_doc += f": {param['annotation']}"
+                if param.get('default') is not None:
+                    param_doc += f" = {param['default']}"
+                doc_parts.append(param_doc)
+        
+        # Return type
+        if self.include_type_hints and method.get('return_annotation'):
+            doc_parts.append("")
+            doc_parts.append(f"**Returns:** `{method['return_annotation']}`")
+        
+        # Decorators
+        if method.get('decorators'):
+            doc_parts.append("")
+            doc_parts.append("**Decorators:** " + ", ".join(f"`@{dec}`" for dec in method['decorators']))
+        
+        # Complexity metrics for methods
+        if self.include_complexity and method.get('complexity'):
+            doc_parts.append("")
+            doc_parts.append("**Complexity Metrics:**")
+            complexity = method['complexity']
+            doc_parts.append(f"- Cyclomatic Complexity: {complexity.get('cyclomatic_complexity', 'N/A')}")
+            doc_parts.append(f"- Cognitive Complexity: {complexity.get('cognitive_complexity', 'N/A')}")
+            doc_parts.append(f"- Max Nesting Depth: {complexity.get('nesting_depth', 'N/A')}")
+            doc_parts.append(f"- Lines of Code: {method.get('lines_of_code', 'N/A')}")
+        
+        # Method type info
+        if method.get('is_async'):
+            doc_parts.append("")
+            doc_parts.append("*This is an async method*")
         
         return "\n".join(doc_parts)
     

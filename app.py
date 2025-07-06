@@ -137,6 +137,8 @@ def main():
         
         python_code = ""
         uploaded_filename = None
+        is_loaded_from_db = False
+        loaded_analysis_id = None
         
         # Check if we have a loaded analysis from session state
         if 'loaded_analysis' in st.session_state and st.session_state.loaded_analysis:
@@ -144,6 +146,8 @@ def main():
             st.info(f"📂 Loaded analysis from database (ID: {analysis.id})")
             python_code = analysis.source_code
             uploaded_filename = analysis.filename
+            is_loaded_from_db = True
+            loaded_analysis_id = analysis.id
             
             # Update options to match the loaded analysis
             if hasattr(analysis, 'complexity_included'):
@@ -214,8 +218,8 @@ def main():
                     else:  # JSON
                         st.json(parsed_data)
                     
-                    # Save to database if enabled
-                    if db_available and save_to_db:
+                    # Save to database if enabled and not loaded from database
+                    if db_available and save_to_db and not is_loaded_from_db:
                         try:
                             analysis_options = {
                                 'complexity': include_complexity,
@@ -238,6 +242,8 @@ def main():
                             st.success(f"✅ Analysis saved to database (ID: {analysis_id})")
                         except Exception as e:
                             st.error(f"Failed to save to database: {str(e)}")
+                    elif is_loaded_from_db:
+                        st.info(f"📂 Viewing existing analysis (ID: {loaded_analysis_id}) - not saving duplicate")
                     
                     # Export functionality
                     st.subheader("Export Documentation")
@@ -269,7 +275,9 @@ def main():
                     # Show database save info
                     if db_available:
                         with col_dl2:
-                            if save_to_db:
+                            if is_loaded_from_db:
+                                st.info("Loaded from database")
+                            elif save_to_db:
                                 st.info("Auto-saved to database")
                             else:
                                 st.info("Database saving disabled")

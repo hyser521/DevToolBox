@@ -106,6 +106,13 @@ class DocumentationGenerator:
         # Location info
         doc_parts.append(f"*Line {func['line_number']}*")
         
+        # Human-readable summary
+        summary = self._generate_function_summary(func)
+        if summary:
+            doc_parts.append("")
+            doc_parts.append("**Summary:**")
+            doc_parts.append(summary)
+        
         # Docstring
         if self.include_docstrings and func.get('docstring'):
             doc_parts.append("")
@@ -202,6 +209,116 @@ class DocumentationGenerator:
         
         return "\n".join(doc_parts)
     
+    def _generate_function_summary(self, func: Dict[str, Any]) -> str:
+        """Generate a human-readable summary for a function or method."""
+        name = func['name']
+        params = func.get('parameters', [])
+        return_type = func.get('return_annotation')
+        complexity = func.get('complexity', {})
+        
+        # Start building the summary
+        summary_parts = []
+        
+        # Basic function description
+        if name.startswith('__') and name.endswith('__'):
+            if name == '__init__':
+                summary_parts.append("Creates a new instance of the class")
+            elif name == '__str__':
+                summary_parts.append("Returns a string representation of the object")
+            elif name == '__repr__':
+                summary_parts.append("Returns a detailed string representation for debugging")
+            elif name == '__len__':
+                summary_parts.append("Returns the length or size of the object")
+            elif name == '__call__':
+                summary_parts.append("Makes the object callable like a function")
+            else:
+                summary_parts.append(f"Special method {name}")
+        elif name.startswith('_'):
+            summary_parts.append("Private helper method")
+        else:
+            # Analyze function name for common patterns
+            name_lower = name.lower()
+            if name_lower.startswith(('get', 'fetch', 'retrieve', 'find')):
+                summary_parts.append("Retrieves or fetches data")
+            elif name_lower.startswith(('set', 'update', 'modify', 'change')):
+                summary_parts.append("Updates or modifies data")
+            elif name_lower.startswith(('create', 'make', 'build', 'generate')):
+                summary_parts.append("Creates or generates new data")
+            elif name_lower.startswith(('delete', 'remove', 'clear')):
+                summary_parts.append("Removes or deletes data")
+            elif name_lower.startswith(('save', 'store', 'write')):
+                summary_parts.append("Saves or stores data")
+            elif name_lower.startswith(('load', 'read', 'open')):
+                summary_parts.append("Loads or reads data")
+            elif name_lower.startswith(('check', 'verify', 'validate')):
+                summary_parts.append("Validates or checks conditions")
+            elif name_lower.startswith(('calculate', 'compute', 'process')):
+                summary_parts.append("Performs calculations or processing")
+            elif name_lower.startswith(('format', 'convert', 'transform')):
+                summary_parts.append("Formats or transforms data")
+            elif name_lower.startswith(('is_', 'has_', 'can_')):
+                summary_parts.append("Returns a boolean result based on conditions")
+            else:
+                summary_parts.append("Performs a specific operation")
+        
+        # Add parameter information
+        non_self_params = [p for p in params if p['name'] not in ['self', 'cls']]
+        if non_self_params:
+            param_count = len(non_self_params)
+            required_params = [p for p in non_self_params if p.get('default') is None and not p['name'].startswith('*')]
+            optional_params = [p for p in non_self_params if p.get('default') is not None]
+            
+            if param_count == 1:
+                summary_parts.append("with 1 parameter")
+            elif param_count > 1:
+                summary_parts.append(f"with {param_count} parameters")
+            
+            if required_params and optional_params:
+                summary_parts.append(f"({len(required_params)} required, {len(optional_params)} optional)")
+            elif optional_params:
+                summary_parts.append(f"(all {len(optional_params)} optional)")
+        else:
+            summary_parts.append("with no parameters")
+        
+        # Add return type information
+        if return_type and return_type.lower() != 'none':
+            if return_type.lower() in ['str', 'string']:
+                summary_parts.append("and returns text")
+            elif return_type.lower() in ['int', 'integer', 'float', 'number']:
+                summary_parts.append("and returns a number")
+            elif return_type.lower() in ['bool', 'boolean']:
+                summary_parts.append("and returns True or False")
+            elif return_type.lower() in ['list', 'tuple', 'set']:
+                summary_parts.append("and returns a collection")
+            elif return_type.lower() in ['dict', 'dictionary']:
+                summary_parts.append("and returns a dictionary")
+            else:
+                summary_parts.append(f"and returns {return_type}")
+        elif return_type and return_type.lower() == 'none':
+            summary_parts.append("without returning a value")
+        
+        # Add complexity insight
+        cyclomatic = complexity.get('cyclomatic_complexity', 0)
+        if cyclomatic > 10:
+            summary_parts.append("(complex logic)")
+        elif cyclomatic > 5:
+            summary_parts.append("(moderate complexity)")
+        elif cyclomatic > 1:
+            summary_parts.append("(simple logic)")
+        
+        # Join the parts into a readable sentence
+        if len(summary_parts) > 1:
+            summary = summary_parts[0] + " " + " ".join(summary_parts[1:])
+        else:
+            summary = summary_parts[0] if summary_parts else "Function performs an operation"
+        
+        # Capitalize first letter and ensure it ends with a period
+        summary = summary[0].upper() + summary[1:] if summary else ""
+        if summary and not summary.endswith('.'):
+            summary += '.'
+        
+        return summary
+    
     def _format_method_detailed(self, method: Dict[str, Any]) -> str:
         """Format detailed method documentation within a class."""
         doc_parts = []
@@ -212,6 +329,13 @@ class DocumentationGenerator:
         
         # Location info
         doc_parts.append(f"*Line {method['line_number']}*")
+        
+        # Human-readable summary
+        summary = self._generate_function_summary(method)
+        if summary:
+            doc_parts.append("")
+            doc_parts.append("**Summary:**")
+            doc_parts.append(summary)
         
         # Method purpose from docstring
         if self.include_docstrings and method.get('docstring'):

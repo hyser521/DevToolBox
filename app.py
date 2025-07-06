@@ -1,21 +1,25 @@
 import streamlit as st
 import ast
 import traceback
+import os
 from io import StringIO
 from utils.ast_parser import PythonASTParser
 from utils.doc_generator import DocumentationGenerator
 from utils.export_handler import ExportHandler
 from utils.database import DatabaseManager
+from utils.ai_enhancer import AIDocumentationEnhancer
+from utils.pattern_analyzer import CodePatternAnalyzer
+from utils.github_integration import GitHubIntegration
 
 def main():
     st.set_page_config(
-        page_title="Python Documentation Tool",
-        page_icon="📚",
+        page_title="AI-Powered Python Documentation Tool",
+        page_icon="🤖",
         layout="wide"
     )
     
-    st.title("📚 Python Documentation Tool")
-    st.markdown("Automatically extract function metadata and generate comprehensive documentation")
+    st.title("🤖 AI-Powered Python Documentation Tool")
+    st.markdown("Intelligent code analysis with AI enhancement, pattern recognition, and GitHub integration")
     
     # Initialize database
     try:
@@ -304,6 +308,188 @@ def main():
                 st.error(f"Error analyzing code: {str(e)}")
                 st.error("Traceback:")
                 st.code(traceback.format_exc())
+    
+    # Agentic Features Section
+    if python_code:
+        st.markdown("---")
+        st.header("🤖 AI-Powered Enhancements")
+        
+        # Create columns for agentic features
+        ai_col1, ai_col2 = st.columns(2)
+        
+        with ai_col1:
+            st.subheader("🧠 AI Analysis")
+            
+            try:
+                # Check if OpenAI API key is available
+                if os.environ.get("OPENAI_API_KEY"):
+                    if st.button("🚀 Generate AI Insights", type="primary"):
+                        with st.spinner("AI is analyzing your code..."):
+                            ai_enhancer = AIDocumentationEnhancer()
+                            
+                            # Generate AI quality analysis
+                            quality_analysis = ai_enhancer.analyze_code_quality(parsed_data)
+                            
+                            st.subheader("📊 Code Quality Assessment")
+                            st.json(quality_analysis)
+                            
+                            # Generate AI suggestions for complex functions
+                            st.subheader("💡 AI Improvement Suggestions")
+                            for func in parsed_data['functions']:
+                                if func.get('complexity', {}).get('cyclomatic_complexity', 0) > 5:
+                                    with st.expander(f"Suggestions for {func['name']}"):
+                                        suggestions = ai_enhancer.suggest_improvements(func)
+                                        for suggestion in suggestions:
+                                            st.write(f"• {suggestion}")
+                            
+                            for cls in parsed_data['classes']:
+                                for method in cls['methods']:
+                                    if method.get('complexity', {}).get('cyclomatic_complexity', 0) > 5:
+                                        with st.expander(f"Suggestions for {cls['name']}.{method['name']}"):
+                                            suggestions = ai_enhancer.suggest_improvements(method)
+                                            for suggestion in suggestions:
+                                                st.write(f"• {suggestion}")
+                else:
+                    st.info("🔑 OpenAI API key needed for AI features. Add it in Replit Secrets.")
+                    
+            except Exception as e:
+                st.error(f"AI Analysis error: {str(e)}")
+        
+        with ai_col2:
+            st.subheader("🔍 Pattern Analysis")
+            
+            if st.button("🎯 Analyze Code Patterns", type="secondary"):
+                with st.spinner("Analyzing code patterns..."):
+                    try:
+                        pattern_analyzer = CodePatternAnalyzer()
+                        pattern_analysis = pattern_analyzer.analyze_patterns(parsed_data)
+                        
+                        # Display design patterns
+                        if pattern_analysis['design_patterns']:
+                            st.subheader("🏗️ Design Patterns Detected")
+                            for pattern, classes in pattern_analysis['design_patterns'].items():
+                                st.write(f"**{pattern.title()}**: {', '.join(classes)}")
+                        
+                        # Display code smells
+                        if pattern_analysis['code_smells']:
+                            st.subheader("⚠️ Code Smells Detected")
+                            for smell, items in pattern_analysis['code_smells'].items():
+                                if items:
+                                    st.write(f"**{smell.replace('_', ' ').title()}**: {', '.join(items)}")
+                        
+                        # Display recommendations
+                        if pattern_analysis['recommendations']:
+                            st.subheader("📋 Recommendations")
+                            for rec in pattern_analysis['recommendations']:
+                                st.write(f"• {rec}")
+                        
+                        # Display architecture insights
+                        arch = pattern_analysis['architectural_insights']
+                        st.subheader("🏛️ Architecture Analysis")
+                        st.write(f"**Separation of Concerns**: {arch['separation_of_concerns']}")
+                        st.write(f"**Cohesion Level**: {arch['cohesion_level']}")
+                        st.write(f"**Abstraction Level**: {arch['abstraction_level']}")
+                        
+                    except Exception as e:
+                        st.error(f"Pattern Analysis error: {str(e)}")
+        
+        # GitHub Integration Section
+        st.markdown("---")
+        st.header("🔗 GitHub Integration")
+        
+        github_col1, github_col2 = st.columns(2)
+        
+        with github_col1:
+            st.subheader("📁 Repository Connection")
+            repo_name = st.text_input("Repository (owner/repo):", placeholder="username/repository-name")
+            github_token = st.text_input("GitHub Token (optional):", type="password", 
+                                       help="Required for private repos and advanced features")
+            
+            if st.button("🔌 Connect to Repository"):
+                if repo_name:
+                    try:
+                        github_integration = GitHubIntegration(github_token)
+                        if github_integration.connect_repository(repo_name):
+                            st.success(f"✅ Connected to {repo_name}")
+                            st.session_state['github_repo'] = repo_name
+                            st.session_state['github_integration'] = github_integration
+                        else:
+                            st.error("❌ Failed to connect. Check repository name and token.")
+                    except Exception as e:
+                        st.error(f"Connection error: {str(e)}")
+                else:
+                    st.warning("Please enter a repository name")
+        
+        with github_col2:
+            st.subheader("📊 Repository Analysis")
+            
+            if 'github_integration' in st.session_state:
+                if st.button("📈 Generate Repository Report"):
+                    with st.spinner("Analyzing repository..."):
+                        try:
+                            report = st.session_state['github_integration'].generate_repository_report()
+                            
+                            if 'error' not in report:
+                                st.subheader("📋 Repository Statistics")
+                                stats = report['repository_stats']
+                                col1, col2, col3 = st.columns(3)
+                                with col1:
+                                    st.metric("Stars", stats['stars'])
+                                with col2:
+                                    st.metric("Forks", stats['forks'])
+                                with col3:
+                                    st.metric("Open Issues", stats['open_issues'])
+                                
+                                st.subheader("💻 Recent Activity")
+                                for activity in report['commit_analysis']['recent_activity'][:5]:
+                                    st.write(f"**{activity['author']}**: {activity['message']}")
+                            else:
+                                st.error(report['error'])
+                        except Exception as e:
+                            st.error(f"Repository analysis error: {str(e)}")
+            else:
+                st.info("Connect to a repository first to enable analysis features")
+        
+        # PR Analysis Section
+        if 'github_integration' in st.session_state:
+            st.markdown("---")
+            st.subheader("🔄 Pull Request Analysis")
+            
+            pr_number = st.number_input("PR Number:", min_value=1, step=1)
+            
+            if st.button("🔍 Analyze Pull Request") and pr_number:
+                with st.spinner("Analyzing pull request..."):
+                    try:
+                        pr_analysis = st.session_state['github_integration'].analyze_pull_request(int(pr_number))
+                        
+                        if 'error' not in pr_analysis:
+                            st.write(f"**Title**: {pr_analysis['title']}")
+                            st.write(f"**Author**: {pr_analysis['author']}")
+                            
+                            if pr_analysis['documentation_needed']:
+                                st.warning("📝 Documentation needed for: " + ", ".join(pr_analysis['documentation_needed']))
+                            
+                            if pr_analysis['complexity_alerts']:
+                                st.error("⚠️ High complexity detected in: " + ", ".join(pr_analysis['complexity_alerts']))
+                            
+                            if pr_analysis['suggestions']:
+                                st.subheader("💡 Suggestions")
+                                for suggestion in pr_analysis['suggestions']:
+                                    st.write(f"• {suggestion}")
+                            
+                            # Automated workflow option
+                            if st.button("🤖 Run Automated Workflow"):
+                                workflow_result = st.session_state['github_integration'].automated_documentation_workflow(int(pr_number))
+                                if 'error' not in workflow_result:
+                                    st.success("✅ Automated workflow completed")
+                                    for action in workflow_result['actions_taken']:
+                                        st.write(f"• {action}")
+                                else:
+                                    st.error(workflow_result['error'])
+                        else:
+                            st.error(pr_analysis['error'])
+                    except Exception as e:
+                        st.error(f"PR analysis error: {str(e)}")
 
 if __name__ == "__main__":
     main()

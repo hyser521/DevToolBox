@@ -11,4 +11,5 @@ dependencies = [
     "requests>=2.32.4",
     "sqlalchemy>=2.0.41",
     "streamlit>=1.46.1",
+    "trafilatura>=2.0.0",
 ]

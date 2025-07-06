@@ -18,7 +18,8 @@ class GitHubIntegration:
     def __init__(self, github_token: Optional[str] = None):
         """Initialize GitHub integration."""
         self.token = github_token or os.environ.get("GITHUB_TOKEN")
-        self.client = Github(self.token) if self.token else None
+        # Create client - works without token for public repos
+        self.client = Github(self.token) if self.token else Github()
         self.repo = None
         
     def connect_repository(self, repo_name: str) -> bool:
@@ -259,41 +260,131 @@ class GitHubIntegration:
                 "last_updated": self.repo.updated_at.isoformat()
             }
             
-            # Analyze recent commits
-            commits = self.repo.get_commits()[:50]  # Last 50 commits
+            # Find all Python files in the repository
+            python_files = []
+            file_contents = {}
+            total_functions = 0
+            total_classes = 0
             
-            commit_analysis = {
-                "total_commits_analyzed": len(list(commits)),
-                "python_files_changed": 0,
-                "documentation_commits": 0,
-                "recent_activity": []
-            }
-            
-            for commit in commits:
-                commit_info = {
-                    "sha": commit.sha[:8],
-                    "author": commit.author.login if commit.author else "Unknown",
-                    "message": commit.commit.message.split('\n')[0],
-                    "date": commit.commit.author.date.isoformat()
-                }
-                commit_analysis["recent_activity"].append(commit_info)
+            try:
+                # Get repository contents recursively
+                contents = self.repo.get_contents("")
+                python_files_data = self._get_python_files_recursive(contents)
                 
-                # Check for Python files and documentation
-                for file in commit.files:
-                    if file.filename.endswith('.py'):
-                        commit_analysis["python_files_changed"] += 1
-                    if any(keyword in commit.commit.message.lower() 
-                          for keyword in ['doc', 'readme', 'comment']):
-                        commit_analysis["documentation_commits"] += 1
+                # Extract Python files and analyze them
+                from .ast_parser import PythonASTParser
+                parser = PythonASTParser()
+                
+                for file_path, file_content in python_files_data.items():
+                    if file_path.endswith('.py'):
+                        python_files.append(file_path)
+                        file_contents[file_path] = file_content
+                        
+                        # Parse Python file for statistics
+                        try:
+                            parsed_data = parser.parse_code(file_content)
+                            total_functions += len(parsed_data.get('functions', []))
+                            total_classes += len(parsed_data.get('classes', []))
+                        except Exception:
+                            # Skip files that can't be parsed
+                            pass
+                            
+            except Exception as e:
+                return {"error": f"Error accessing repository contents: {str(e)}"}
+            
+            # Analyze recent commits
+            try:
+                commits = list(self.repo.get_commits()[:10])  # Last 10 commits for faster loading
+                
+                commit_analysis = {
+                    "total_commits_analyzed": len(commits),
+                    "python_files_changed": 0,
+                    "documentation_commits": 0,
+                    "recent_activity": []
+                }
+                
+                for commit in commits:
+                    commit_info = {
+                        "sha": commit.sha[:8],
+                        "author": commit.author.login if commit.author else "Unknown",
+                        "message": commit.commit.message.split('\n')[0],
+                        "date": commit.commit.author.date.isoformat()
+                    }
+                    commit_analysis["recent_activity"].append(commit_info)
+                    
+                    # Check for Python files and documentation
+                    try:
+                        for file in commit.files:
+                            if file.filename.endswith('.py'):
+                                commit_analysis["python_files_changed"] += 1
+                            if any(keyword in commit.commit.message.lower() 
+                                  for keyword in ['doc', 'readme', 'comment']):
+                                commit_analysis["documentation_commits"] += 1
+                    except Exception:
+                        # Skip commit analysis if files can't be accessed
+                        pass
+                        
+            except Exception:
+                commit_analysis = {"error": "Could not analyze commits"}
             
             return {
                 "repository_stats": stats,
+                "python_files": python_files,
+                "file_contents": file_contents,
+                "total_functions": total_functions,
+                "total_classes": total_classes,
                 "commit_analysis": commit_analysis,
                 "generated_at": datetime.now().isoformat()
             }
             
         except Exception as e:
             return {"error": f"Error generating repository report: {str(e)}"}
+    
+    def _get_python_files_recursive(self, contents, max_files=50) -> Dict[str, str]:
+        """
+        Recursively get Python files from repository contents.
+        
+        Args:
+            contents: Repository contents from GitHub API
+            max_files: Maximum number of files to process
+            
+        Returns:
+            Dictionary mapping file paths to file contents
+        """
+        python_files = {}
+        files_processed = 0
+        
+        try:
+            for content_file in contents:
+                if files_processed >= max_files:
+                    break
+                    
+                if content_file.type == "dir":
+                    # Recursively process directories
+                    try:
+                        sub_contents = self.repo.get_contents(content_file.path)
+                        sub_files = self._get_python_files_recursive(sub_contents, max_files - files_processed)
+                        python_files.update(sub_files)
+                        files_processed += len(sub_files)
+                    except Exception:
+                        # Skip directories that can't be accessed
+                        continue
+                        
+                elif content_file.name.endswith('.py'):
+                    try:
+                        # Get file content
+                        file_content = content_file.decoded_content.decode('utf-8')
+                        python_files[content_file.path] = file_content
+                        files_processed += 1
+                    except Exception:
+                        # Skip files that can't be decoded
+                        continue
+                        
+        except Exception:
+            # Return what we have so far if there's an error
+            pass
+            
+        return python_files
     
     def setup_webhook(self, webhook_url: str, events: List[str] = None) -> bool:
         """

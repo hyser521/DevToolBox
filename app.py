@@ -136,7 +136,7 @@ def main():
         # Input method selection
         input_method = st.radio(
             "Choose input method:",
-            ["Upload File", "Paste Code"]
+            ["Upload File", "Paste Code", "GitHub Repository"]
         )
         
         python_code = ""
@@ -181,12 +181,94 @@ def main():
                 except Exception as e:
                     st.error(f"Error reading file: {str(e)}")
         
-        else:
+        elif input_method == "Paste Code":
             python_code = st.text_area(
                 "Paste your Python code here:",
                 height=400,
                 placeholder="def example_function(param1: str, param2: int = 10) -> str:\n    \"\"\"\n    Example function docstring.\n    \n    Args:\n        param1: Description of param1\n        param2: Description of param2\n    \n    Returns:\n        Description of return value\n    \"\"\"\n    return f'{param1}_{param2}'"
             )
+        
+        else:  # GitHub Repository
+            st.subheader("📡 GitHub Repository Analysis")
+            github_url = st.text_input(
+                "GitHub Repository URL:",
+                placeholder="https://github.com/owner/repository",
+                help="Enter a public GitHub repository URL to analyze and document all Python files"
+            )
+            
+            if github_url:
+                # Extract repo name from URL
+                try:
+                    repo_name = github_url.replace("https://github.com/", "").replace("http://github.com/", "")
+                    if repo_name.endswith('.git'):
+                        repo_name = repo_name[:-4]
+                    
+                    st.info(f"Repository: {repo_name}")
+                    
+                    if st.button("🔍 Analyze Repository", type="primary"):
+                        with st.spinner("Analyzing GitHub repository..."):
+                            try:
+                                # Initialize GitHub integration
+                                github_integration = GitHubIntegration()
+                                
+                                # Connect to repository
+                                if github_integration.connect_repository(repo_name):
+                                    st.success(f"Successfully connected to {repo_name}")
+                                    
+                                    # Generate repository analysis report
+                                    repo_report = github_integration.generate_repository_report()
+                                    
+                                    # Store repository analysis in session state
+                                    st.session_state.repo_analysis = repo_report
+                                    st.session_state.repo_name = repo_name
+                                    
+                                    # Display repository summary
+                                    st.subheader("📊 Repository Summary")
+                                    col1, col2, col3 = st.columns(3)
+                                    
+                                    with col1:
+                                        st.metric("Python Files", len(repo_report.get('python_files', [])))
+                                    with col2:
+                                        st.metric("Total Functions", repo_report.get('total_functions', 0))
+                                    with col3:
+                                        st.metric("Total Classes", repo_report.get('total_classes', 0))
+                                    
+                                    # Show file selection
+                                    python_files = repo_report.get('python_files', [])
+                                    if python_files:
+                                        st.subheader("📁 Select Files to Document")
+                                        selected_files = st.multiselect(
+                                            "Choose Python files:",
+                                            python_files,
+                                            default=python_files[:5] if len(python_files) <= 5 else python_files[:3],
+                                            help="Select files to include in documentation"
+                                        )
+                                        
+                                        if selected_files and st.button("📖 Generate Documentation"):
+                                            # Process selected files
+                                            combined_code = ""
+                                            combined_filename = f"{repo_name.replace('/', '_')}_analysis"
+                                            
+                                            for file_path in selected_files:
+                                                file_content = repo_report['file_contents'].get(file_path, '')
+                                                combined_code += f"# File: {file_path}\n{file_content}\n\n"
+                                            
+                                            python_code = combined_code
+                                            uploaded_filename = combined_filename
+                                            
+                                            st.success(f"Ready to analyze {len(selected_files)} files from {repo_name}")
+                                    else:
+                                        st.warning("No Python files found in this repository")
+                                else:
+                                    st.error("Failed to connect to repository. Please check the URL and try again.")
+                                    
+                            except Exception as e:
+                                st.error(f"Error analyzing repository: {str(e)}")
+                                st.info("💡 Tip: Make sure the repository is public and the URL is correct")
+                                
+                except Exception as e:
+                    st.error(f"Invalid GitHub URL: {str(e)}")
+                    st.info("Please enter a valid GitHub repository URL (e.g., https://github.com/owner/repo)")
         
         if python_code:
             # Display syntax highlighted code

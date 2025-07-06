@@ -10,6 +10,7 @@ from utils.database import DatabaseManager
 from utils.ai_enhancer import AIDocumentationEnhancer
 from utils.pattern_analyzer import CodePatternAnalyzer
 from utils.github_integration import GitHubIntegration
+from utils.complexity_visualizer import ComplexityVisualizer
 
 def main():
     st.set_page_config(
@@ -529,6 +530,121 @@ def main():
                         
                     except Exception as e:
                         st.error(f"Pattern Analysis error: {str(e)}")
+        
+        # Complexity Visualization Section
+        st.markdown("---")
+        st.header("📈 Interactive Complexity Visualization")
+        
+        complexity_col1, complexity_col2 = st.columns(2)
+        
+        with complexity_col1:
+            st.subheader("🎯 Complexity Overview")
+            
+            if st.button("🚀 Generate Complexity Visualizations", type="primary"):
+                with st.spinner("Creating beautiful visualizations..."):
+                    try:
+                        visualizer = ComplexityVisualizer()
+                        
+                        # Show playful progress indicators
+                        visualizer.create_animated_loading_indicator("🎨 Creating awesome charts...")
+                        
+                        # Create and display the complexity heatmap
+                        st.subheader("🔥 Complexity Heatmap")
+                        heatmap_fig = visualizer.create_complexity_heatmap(parsed_data)
+                        st.plotly_chart(heatmap_fig, use_container_width=True)
+                        
+                        # Create and display distribution charts
+                        st.subheader("📊 Complexity Distribution")
+                        dist_fig = visualizer.create_complexity_distribution(parsed_data)
+                        st.plotly_chart(dist_fig, use_container_width=True)
+                        
+                    except Exception as e:
+                        st.error(f"Visualization error: {str(e)}")
+        
+        with complexity_col2:
+            st.subheader("🎮 Interactive Function Analysis")
+            
+            functions = parsed_data.get('functions', [])
+            if functions:
+                # Function selector
+                function_names = [f.get('name', f'Function_{i}') for i, f in enumerate(functions)]
+                selected_function_name = st.selectbox(
+                    "Choose a function to analyze:",
+                    function_names,
+                    help="Select a function to see its detailed complexity profile"
+                )
+                
+                if st.button("🔍 Analyze Selected Function", type="secondary"):
+                    # Find selected function
+                    selected_function = None
+                    for func in functions:
+                        if func.get('name') == selected_function_name:
+                            selected_function = func
+                            break
+                    
+                    if selected_function:
+                        try:
+                            visualizer = ComplexityVisualizer()
+                            
+                            # Create radar chart for selected function
+                            st.subheader(f"🎯 Complexity Profile: {selected_function_name}")
+                            radar_fig = visualizer.create_complexity_radar_chart(selected_function)
+                            st.plotly_chart(radar_fig, use_container_width=True)
+                            
+                            # Show playful progress bars for metrics
+                            complexity = selected_function.get('complexity', {})
+                            
+                            st.subheader("📊 Detailed Metrics")
+                            visualizer.create_playful_progress_bar(
+                                complexity.get('cyclomatic_complexity', 0), 
+                                20, 
+                                "Cyclomatic Complexity", 
+                                "🔄"
+                            )
+                            
+                            visualizer.create_playful_progress_bar(
+                                complexity.get('cognitive_complexity', 0), 
+                                30, 
+                                "Cognitive Complexity", 
+                                "🧠"
+                            )
+                            
+                            visualizer.create_playful_progress_bar(
+                                complexity.get('max_nesting_depth', 0), 
+                                8, 
+                                "Nesting Depth", 
+                                "🏗️"
+                            )
+                            
+                            visualizer.create_playful_progress_bar(
+                                len(selected_function.get('parameters', [])), 
+                                10, 
+                                "Parameters", 
+                                "⚙️"
+                            )
+                            
+                            # Show complexity insights
+                            st.subheader("💡 Complexity Assessment")
+                            
+                            cyclomatic = complexity.get('cyclomatic_complexity', 0)
+                            cognitive = complexity.get('cognitive_complexity', 0)
+                            
+                            cyclomatic_category = visualizer.get_complexity_category(cyclomatic, 'cyclomatic')
+                            cognitive_category = visualizer.get_complexity_category(cognitive, 'cognitive')
+                            
+                            st.info(f"**Cyclomatic Complexity**: {cyclomatic_category}")
+                            st.info(f"**Cognitive Complexity**: {cognitive_category}")
+                            
+                        except Exception as e:
+                            st.error(f"Function analysis error: {str(e)}")
+            else:
+                st.info("No functions found to analyze")
+        
+        # Overall complexity insights
+        if functions:
+            st.markdown("---")
+            visualizer = ComplexityVisualizer()
+            visualizer.display_complexity_insights(parsed_data)
         
         # GitHub Integration Section
         st.markdown("---")

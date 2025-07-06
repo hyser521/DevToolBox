@@ -5,12 +5,13 @@ Automated GitHub Integration for continuous documentation and analysis.
 import os
 import json
 import time
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Callable
 from datetime import datetime
 from github import Github
 from github.Repository import Repository
 from github.PullRequest import PullRequest
 from github.Issue import Issue
+import threading
 
 class GitHubIntegration:
     """Automated GitHub integration for documentation and analysis."""
@@ -21,6 +22,37 @@ class GitHubIntegration:
         # Create client - works without token for public repos
         self.client = Github(self.token) if self.token else Github()
         self.repo = None
+        self._cancel_flag = False
+        self._operation_thread = None
+        self._api_call_count = 0
+        self._last_api_call = 0
+        self._rate_limit_delay = 1.0  # seconds between API calls
+    
+    def cancel_operation(self):
+        """Cancel any ongoing GitHub API operation."""
+        self._cancel_flag = True
+        if self._operation_thread and self._operation_thread.is_alive():
+            # Thread will check cancel flag and stop naturally
+            pass
+    
+    def reset_cancel_flag(self):
+        """Reset the cancellation flag for new operations."""
+        self._cancel_flag = False
+    
+    def _throttle_api_call(self):
+        """Add delay between API calls to avoid rate limiting."""
+        current_time = time.time()
+        if self._last_api_call > 0:
+            time_since_last_call = current_time - self._last_api_call
+            if time_since_last_call < self._rate_limit_delay:
+                time.sleep(self._rate_limit_delay - time_since_last_call)
+        
+        self._last_api_call = time.time()
+        self._api_call_count += 1
+    
+    def _check_cancellation(self) -> bool:
+        """Check if operation should be cancelled."""
+        return self._cancel_flag
         
     def connect_repository(self, repo_name: str) -> bool:
         """
@@ -239,18 +271,32 @@ class GitHubIntegration:
         except Exception as e:
             return {"error": f"Error monitoring repository: {str(e)}"}
     
-    def generate_repository_report(self) -> Dict[str, Any]:
+    def generate_repository_report(self, progress_callback: Optional[Callable] = None, max_files: int = 20) -> Dict[str, Any]:
         """
-        Generate a comprehensive repository analysis report.
+        Generate a comprehensive repository analysis report with cancellation support.
         
+        Args:
+            progress_callback: Optional callback function to report progress
+            max_files: Maximum number of Python files to analyze
+            
         Returns:
             Repository analysis report
         """
         try:
+            # Reset cancellation flag for new operation
+            self.reset_cancel_flag()
+            
             if not self.repo:
                 return {"error": "No repository connected"}
             
-            # Get repository statistics
+            if progress_callback:
+                progress_callback("Getting repository information...")
+            
+            # Get repository statistics with throttling
+            self._throttle_api_call()
+            if self._check_cancellation():
+                return {"cancelled": True, "message": "Operation cancelled by user"}
+                
             stats = {
                 "repository": self.repo.full_name,
                 "language": self.repo.language,
@@ -260,22 +306,39 @@ class GitHubIntegration:
                 "last_updated": self.repo.updated_at.isoformat()
             }
             
-            # Find all Python files in the repository
+            # Find Python files with limited scope
             python_files = []
             file_contents = {}
             total_functions = 0
             total_classes = 0
             
             try:
-                # Get repository contents recursively
+                if progress_callback:
+                    progress_callback("Scanning for Python files...")
+                
+                # Get repository contents with throttling
+                self._throttle_api_call()
+                if self._check_cancellation():
+                    return {"cancelled": True, "message": "Operation cancelled by user"}
+                    
                 contents = self.repo.get_contents("")
-                python_files_data = self._get_python_files_recursive(contents)
+                python_files_data = self._get_python_files_recursive(contents, max_files, progress_callback)
+                
+                if self._check_cancellation():
+                    return {"cancelled": True, "message": "Operation cancelled by user"}
+                
+                if progress_callback:
+                    progress_callback(f"Analyzing {len(python_files_data)} Python files...")
                 
                 # Extract Python files and analyze them
                 from .ast_parser import PythonASTParser
                 parser = PythonASTParser()
                 
+                files_processed = 0
                 for file_path, file_content in python_files_data.items():
+                    if self._check_cancellation():
+                        return {"cancelled": True, "message": "Operation cancelled by user"}
+                        
                     if file_path.endswith('.py'):
                         python_files.append(file_path)
                         file_contents[file_path] = file_content
@@ -288,44 +351,22 @@ class GitHubIntegration:
                         except Exception:
                             # Skip files that can't be parsed
                             pass
+                    
+                    files_processed += 1
+                    if progress_callback and files_processed % 5 == 0:
+                        progress_callback(f"Processed {files_processed}/{len(python_files_data)} files...")
                             
             except Exception as e:
                 return {"error": f"Error accessing repository contents: {str(e)}"}
             
-            # Analyze recent commits
-            try:
-                commits = list(self.repo.get_commits()[:10])  # Last 10 commits for faster loading
-                
-                commit_analysis = {
-                    "total_commits_analyzed": len(commits),
-                    "python_files_changed": 0,
-                    "documentation_commits": 0,
-                    "recent_activity": []
-                }
-                
-                for commit in commits:
-                    commit_info = {
-                        "sha": commit.sha[:8],
-                        "author": commit.author.login if commit.author else "Unknown",
-                        "message": commit.commit.message.split('\n')[0],
-                        "date": commit.commit.author.date.isoformat()
-                    }
-                    commit_analysis["recent_activity"].append(commit_info)
-                    
-                    # Check for Python files and documentation
-                    try:
-                        for file in commit.files:
-                            if file.filename.endswith('.py'):
-                                commit_analysis["python_files_changed"] += 1
-                            if any(keyword in commit.commit.message.lower() 
-                                  for keyword in ['doc', 'readme', 'comment']):
-                                commit_analysis["documentation_commits"] += 1
-                    except Exception:
-                        # Skip commit analysis if files can't be accessed
-                        pass
-                        
-            except Exception:
-                commit_analysis = {"error": "Could not analyze commits"}
+            # Skip commit analysis to reduce API calls and improve performance
+            commit_analysis = {
+                "skipped": True,
+                "reason": "Optimized for faster loading and reduced API calls"
+            }
+            
+            if progress_callback:
+                progress_callback("Analysis complete!")
             
             return {
                 "repository_stats": stats,
@@ -334,19 +375,21 @@ class GitHubIntegration:
                 "total_functions": total_functions,
                 "total_classes": total_classes,
                 "commit_analysis": commit_analysis,
+                "api_calls_made": self._api_call_count,
                 "generated_at": datetime.now().isoformat()
             }
             
         except Exception as e:
             return {"error": f"Error generating repository report: {str(e)}"}
     
-    def _get_python_files_recursive(self, contents, max_files=50) -> Dict[str, str]:
+    def _get_python_files_recursive(self, contents, max_files=50, progress_callback: Optional[Callable] = None) -> Dict[str, str]:
         """
-        Recursively get Python files from repository contents.
+        Recursively get Python files from repository contents with cancellation support.
         
         Args:
             contents: Repository contents from GitHub API
             max_files: Maximum number of files to process
+            progress_callback: Optional callback for progress updates
             
         Returns:
             Dictionary mapping file paths to file contents
@@ -356,14 +399,34 @@ class GitHubIntegration:
         
         try:
             for content_file in contents:
+                if self._check_cancellation():
+                    break
+                    
                 if files_processed >= max_files:
                     break
                     
                 if content_file.type == "dir":
+                    # Skip common directories that rarely contain useful Python files
+                    skip_dirs = {'.git', '__pycache__', '.pytest_cache', 'node_modules', 
+                               '.venv', 'venv', 'env', '.env', 'dist', 'build'}
+                    if content_file.name in skip_dirs:
+                        continue
+                        
                     # Recursively process directories
                     try:
+                        if progress_callback:
+                            progress_callback(f"Scanning directory: {content_file.path}")
+                            
+                        self._throttle_api_call()
+                        if self._check_cancellation():
+                            break
+                            
                         sub_contents = self.repo.get_contents(content_file.path)
-                        sub_files = self._get_python_files_recursive(sub_contents, max_files - files_processed)
+                        sub_files = self._get_python_files_recursive(
+                            sub_contents, 
+                            max_files - files_processed,
+                            progress_callback
+                        )
                         python_files.update(sub_files)
                         files_processed += len(sub_files)
                     except Exception:
@@ -372,7 +435,14 @@ class GitHubIntegration:
                         
                 elif content_file.name.endswith('.py'):
                     try:
-                        # Get file content
+                        if progress_callback:
+                            progress_callback(f"Loading: {content_file.path}")
+                            
+                        # Get file content with throttling
+                        self._throttle_api_call()
+                        if self._check_cancellation():
+                            break
+                            
                         file_content = content_file.decoded_content.decode('utf-8')
                         python_files[content_file.path] = file_content
                         files_processed += 1

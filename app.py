@@ -205,26 +205,61 @@ def main():
                     
                     st.info(f"Repository: {repo_name}")
                     
-                    if st.button("🔍 Analyze Repository", type="primary"):
-                        with st.spinner("Analyzing GitHub repository..."):
-                            try:
-                                # Initialize GitHub integration
-                                github_integration = GitHubIntegration()
+                    analyze_col, cancel_col = st.columns([3, 1])
+                    
+                    with analyze_col:
+                        analyze_button = st.button("🔍 Analyze Repository", type="primary", key="analyze_repo")
+                    
+                    with cancel_col:
+                        if 'github_operation_active' in st.session_state and st.session_state.github_operation_active:
+                            if st.button("🛑 Cancel", type="secondary", key="cancel_repo"):
+                                if 'github_integration' in st.session_state:
+                                    st.session_state.github_integration.cancel_operation()
+                                st.session_state.github_operation_active = False
+                                st.warning("Operation cancelled")
+                                st.rerun()
+                    
+                    if analyze_button:
+                        # Initialize progress tracking
+                        progress_placeholder = st.empty()
+                        status_placeholder = st.empty()
+                        
+                        try:
+                            # Initialize GitHub integration
+                            github_integration = GitHubIntegration()
+                            st.session_state.github_integration = github_integration
+                            st.session_state.github_operation_active = True
+                            
+                            def progress_callback(message):
+                                progress_placeholder.info(f"📡 {message}")
+                            
+                            # Connect to repository
+                            if github_integration.connect_repository(repo_name):
+                                status_placeholder.success(f"Successfully connected to {repo_name}")
                                 
-                                # Connect to repository
-                                if github_integration.connect_repository(repo_name):
-                                    st.success(f"Successfully connected to {repo_name}")
-                                    
-                                    # Generate repository analysis report
-                                    repo_report = github_integration.generate_repository_report()
-                                    
+                                # Generate repository analysis report with progress and cancellation
+                                repo_report = github_integration.generate_repository_report(
+                                    progress_callback=progress_callback,
+                                    max_files=15  # Limit to reduce API calls
+                                )
+                                
+                                # Clear progress indicators
+                                progress_placeholder.empty()
+                                st.session_state.github_operation_active = False
+                                
+                                # Check if operation was cancelled
+                                if repo_report.get('cancelled'):
+                                    status_placeholder.warning(repo_report.get('message', 'Operation was cancelled'))
+                                elif repo_report.get('error'):
+                                    status_placeholder.error(f"Error: {repo_report['error']}")
+                                else:
                                     # Store repository analysis in session state
                                     st.session_state.repo_analysis = repo_report
                                     st.session_state.repo_name = repo_name
                                     
                                     # Display repository summary
                                     st.subheader("📊 Repository Summary")
-                                    col1, col2, col3 = st.columns(3)
+                                    col1, col2, col3, col4 = st.columns(4)
                                     
                                     with col1:
                                         st.metric("Python Files", len(repo_report.get('python_files', [])))
@@ -232,6 +267,9 @@ def main():
                                         st.metric("Total Functions", repo_report.get('total_functions', 0))
                                     with col3:
                                         st.metric("Total Classes", repo_report.get('total_classes', 0))
+                                    with col4:
+                                        api_calls = repo_report.get('api_calls_made', 0)
+                                        st.metric("API Calls", api_calls, help="Number of GitHub API calls made (optimized to reduce rate limiting)")
                                     
                                     # Show file selection
                                     python_files = repo_report.get('python_files', [])
@@ -260,12 +298,14 @@ def main():
                                             st.info("📥 Scroll down to see the generated documentation and download options")
                                     else:
                                         st.warning("No Python files found in this repository")
-                                else:
-                                    st.error("Failed to connect to repository. Please check the URL and try again.")
-                                    
-                            except Exception as e:
-                                st.error(f"Error analyzing repository: {str(e)}")
-                                st.info("💡 Tip: Make sure the repository is public and the URL is correct")
+                            else:
+                                status_placeholder.error("Failed to connect to repository. Please check the URL and try again.")
+                                
+                        except Exception as e:
+                            st.session_state.github_operation_active = False
+                            progress_placeholder.empty()
+                            status_placeholder.error(f"Error analyzing repository: {str(e)}")
+                            st.info("💡 Tip: Make sure the repository is public and the URL is correct")
                                 
                 except Exception as e:
                     st.error(f"Invalid GitHub URL: {str(e)}")

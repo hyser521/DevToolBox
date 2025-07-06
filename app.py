@@ -5,6 +5,7 @@ from io import StringIO
 from utils.ast_parser import PythonASTParser
 from utils.doc_generator import DocumentationGenerator
 from utils.export_handler import ExportHandler
+from utils.database import DatabaseManager
 
 def main():
     st.set_page_config(
@@ -16,7 +17,16 @@ def main():
     st.title("📚 Python Documentation Tool")
     st.markdown("Automatically extract function metadata and generate comprehensive documentation")
     
-    # Sidebar for options
+    # Initialize database
+    try:
+        db = DatabaseManager()
+        db_available = True
+    except Exception as e:
+        st.error(f"Database connection failed: {str(e)}")
+        db_available = False
+        db = None
+    
+    # Sidebar for options and database features
     with st.sidebar:
         st.header("Options")
         
@@ -32,6 +42,51 @@ def main():
         include_complexity = st.checkbox("Include Complexity Metrics", value=True)
         include_type_hints = st.checkbox("Include Type Hints", value=True)
         include_docstrings = st.checkbox("Include Docstrings", value=True)
+        
+        # Database features
+        if db_available:
+            st.divider()
+            st.subheader("📁 Documentation History")
+            
+            # Save options
+            save_to_db = st.checkbox("Save analysis to database", value=True)
+            filename_input = st.text_input("Filename (optional)", placeholder="e.g., my_module.py")
+        else:
+            save_to_db = False
+            filename_input = ""
+            
+            # Recent analyses
+            st.subheader("Recent Analyses")
+            if st.button("Refresh History"):
+                st.rerun()
+            
+            try:
+                recent_analyses = db.get_recent_analyses(5)
+                for analysis in recent_analyses:
+                    with st.expander(f"{analysis.filename or 'Untitled'} - {analysis.created_at.strftime('%m/%d %H:%M')}"):
+                        st.write(f"**ID:** {analysis.id}")
+                        st.write(f"**Format:** {analysis.export_format}")
+                        st.write(f"**Functions:** {len(analysis.parsed_data.get('functions', []))}")
+                        st.write(f"**Classes:** {len(analysis.parsed_data.get('classes', []))}")
+                        if st.button(f"Load Analysis {analysis.id}", key=f"load_{analysis.id}"):
+                            st.session_state.loaded_analysis = analysis
+                            st.rerun()
+            except Exception as e:
+                st.error(f"Error loading history: {str(e)}")
+            
+            # Database statistics
+            st.subheader("📊 Statistics")
+            try:
+                stats = db.get_statistics()
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Total Analyses", stats['total_analyses'])
+                    st.metric("Functions Documented", stats['total_functions_documented'])
+                with col2:
+                    st.metric("Projects", stats['total_projects'])
+                    st.metric("Classes Documented", stats['total_classes_documented'])
+            except Exception as e:
+                st.error(f"Error loading stats: {str(e)}")
     
     # Main content area
     col1, col2 = st.columns([1, 1])
@@ -47,7 +102,26 @@ def main():
         
         python_code = ""
         
-        if input_method == "Upload File":
+        # Check if we have a loaded analysis from session state
+        if 'loaded_analysis' in st.session_state and st.session_state.loaded_analysis:
+            analysis = st.session_state.loaded_analysis
+            st.info(f"📂 Loaded analysis from database (ID: {analysis.id})")
+            python_code = analysis.source_code
+            
+            # Update options to match the loaded analysis
+            if hasattr(analysis, 'complexity_included'):
+                include_complexity = analysis.complexity_included
+            if hasattr(analysis, 'type_hints_included'):
+                include_type_hints = analysis.type_hints_included
+            if hasattr(analysis, 'docstrings_included'):
+                include_docstrings = analysis.docstrings_included
+            if hasattr(analysis, 'export_format'):
+                export_format = analysis.export_format.title()
+            
+            # Clear the loaded analysis
+            del st.session_state.loaded_analysis
+        
+        elif input_method == "Upload File":
             uploaded_file = st.file_uploader(
                 "Choose a Python file",
                 type=['py'],
@@ -102,6 +176,28 @@ def main():
                     else:  # JSON
                         st.json(parsed_data)
                     
+                    # Save to database if enabled
+                    if db_available and save_to_db:
+                        try:
+                            analysis_options = {
+                                'complexity': include_complexity,
+                                'type_hints': include_type_hints,
+                                'docstrings': include_docstrings
+                            }
+                            
+                            analysis_id = db.save_analysis(
+                                source_code=python_code,
+                                parsed_data=parsed_data,
+                                documentation=documentation,
+                                filename=filename_input if filename_input.strip() else None,
+                                export_format=export_format.lower(),
+                                options=analysis_options
+                            )
+                            
+                            st.success(f"✅ Analysis saved to database (ID: {analysis_id})")
+                        except Exception as e:
+                            st.error(f"Failed to save to database: {str(e)}")
+                    
                     # Export functionality
                     st.subheader("Export Documentation")
                     
@@ -120,12 +216,22 @@ def main():
                         file_name = "documentation.json"
                         mime_type = "application/json"
                     
-                    st.download_button(
-                        label=f"Download {export_format}",
-                        data=file_content,
-                        file_name=file_name,
-                        mime=mime_type
-                    )
+                    col_dl1, col_dl2 = st.columns(2)
+                    with col_dl1:
+                        st.download_button(
+                            label=f"Download {export_format}",
+                            data=file_content,
+                            file_name=file_name,
+                            mime=mime_type
+                        )
+                    
+                    # Show database save info
+                    if db_available:
+                        with col_dl2:
+                            if save_to_db:
+                                st.info("Auto-saved to database")
+                            else:
+                                st.info("Database saving disabled")
                     
                     # Display analysis summary
                     st.subheader("Analysis Summary")

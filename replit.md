@@ -13,6 +13,7 @@ The application follows a modular architecture with clear separation of concerns
 - **Documentation Engine**: Template-based documentation generation
 - **Export System**: Multi-format output handler
 - **Analysis Modules**: Complexity metrics and code quality assessment
+- **Database Layer**: PostgreSQL integration for storing documentation history and analytics
 
 ## Key Components
 
@@ -59,6 +60,12 @@ The application follows a modular architecture with clear separation of concerns
 - **HTML Features**: Styled output with CSS, responsive design
 - **Design**: Clean, professional documentation appearance
 
+### 6. Database Manager (`utils/database.py`)
+- **Purpose**: PostgreSQL integration for data persistence
+- **Models**: DocumentationProject and CodeAnalysis tables
+- **Features**: Save/retrieve analyses, search functionality, statistics
+- **Schema**: SQLAlchemy ORM with JSON storage for parsed metadata
+
 ## Data Flow
 
 1. **Input Stage**: User provides Python code via file upload or direct paste
@@ -92,6 +99,9 @@ The application is designed for Replit deployment with:
 
 Changelog:
 - July 06, 2025. Initial setup
+- July 06, 2025. Added PostgreSQL database integration for storing documentation history and analytics
+- July 06, 2025. Enhanced method documentation with detailed purpose descriptions and complexity metrics
+- July 06, 2025. Fixed isinstance syntax errors in complexity analyzer
 
 ## User Preferences
 

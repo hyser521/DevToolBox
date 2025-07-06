@@ -1,6 +1,6 @@
 # Python Documentation Tool
 
-A Streamlit-based Python documentation tool that automatically extracts function and class metadata from Python code and generates comprehensive documentation with complexity analysis.
+An AI-generated Streamlit-based Python documentation tool that automatically extracts function and class metadata from Python code and generates comprehensive documentation with complexity analysis. Generated using replit.
 
 ## Features
 

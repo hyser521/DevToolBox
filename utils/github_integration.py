@@ -66,13 +66,22 @@ class GitHubIntegration:
         """
         try:
             if not self.client:
-                return False
-                
+                raise Exception("GitHub client not initialized")
+            
+            self._throttle_api_call()
             self.repo = self.client.get_repo(repo_name)
             return True
             
         except Exception as e:
-            print(f"Error connecting to repository: {e}")
+            error_msg = str(e).lower()
+            if "rate limit" in error_msg or "403" in error_msg:
+                raise Exception("GitHub API rate limit exceeded. Please wait a few minutes or provide a GitHub token for higher limits.")
+            elif "not found" in error_msg or "404" in error_msg:
+                raise Exception(f"Repository '{repo_name}' not found. Please check the repository name.")
+            elif "forbidden" in error_msg:
+                raise Exception("Access forbidden. The repository may be private or require authentication.")
+            else:
+                raise Exception(f"Error connecting to repository: {str(e)}")
             return False
     
     def analyze_pull_request(self, pr_number: int) -> Dict[str, Any]:

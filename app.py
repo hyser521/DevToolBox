@@ -235,25 +235,45 @@ def main():
                                 progress_placeholder.info(f"📡 {message}")
                             
                             # Connect to repository
-                            if github_integration.connect_repository(repo_name):
-                                status_placeholder.success(f"Successfully connected to {repo_name}")
-                                
-                                # Generate repository analysis report with progress and cancellation
-                                repo_report = github_integration.generate_repository_report(
-                                    progress_callback=progress_callback,
-                                    max_files=15  # Limit to reduce API calls
-                                )
-                                
-                                # Clear progress indicators
-                                progress_placeholder.empty()
+                            try:
+                                if github_integration.connect_repository(repo_name):
+                                    status_placeholder.success(f"Successfully connected to {repo_name}")
+                                    
+                                    # Generate repository analysis report with progress and cancellation
+                                    repo_report = github_integration.generate_repository_report(
+                                        progress_callback=progress_callback,
+                                        max_files=15  # Limit to reduce API calls
+                                    )
+                            except Exception as connect_error:
                                 st.session_state.github_operation_active = False
+                                progress_placeholder.empty()
                                 
-                                # Check if operation was cancelled
-                                if repo_report.get('cancelled'):
-                                    status_placeholder.warning(repo_report.get('message', 'Operation was cancelled'))
-                                elif repo_report.get('error'):
-                                    status_placeholder.error(f"Error: {repo_report['error']}")
+                                error_msg = str(connect_error)
+                                if "rate limit" in error_msg.lower():
+                                    status_placeholder.error(
+                                        "⏱️ GitHub API rate limit exceeded. The free API allows 60 requests per hour. "
+                                        "Please wait about an hour or add a GitHub token in Replit Secrets for 5000 requests/hour."
+                                    )
+                                    st.info(
+                                        "💡 **Tip**: To get a GitHub token:\n"
+                                        "1. Go to GitHub.com → Settings → Developer settings → Personal access tokens\n"
+                                        "2. Generate a new token with 'public_repo' permission\n"
+                                        "3. Add it as GITHUB_TOKEN in your Replit Secrets"
+                                    )
                                 else:
+                                    status_placeholder.error(f"Connection failed: {error_msg}")
+                                return
+                                
+                            # Clear progress indicators
+                            progress_placeholder.empty()
+                            st.session_state.github_operation_active = False
+                            
+                            # Check if operation was cancelled
+                            if repo_report.get('cancelled'):
+                                status_placeholder.warning(repo_report.get('message', 'Operation was cancelled'))
+                            elif repo_report.get('error'):
+                                status_placeholder.error(f"Error: {repo_report['error']}")
+                            else:
                                     # Store repository analysis in session state
                                     st.session_state.repo_analysis = repo_report
                                     st.session_state.repo_name = repo_name
@@ -299,8 +319,6 @@ def main():
                                             st.info("📥 Scroll down to see the generated documentation and download options")
                                     else:
                                         st.warning("No Python files found in this repository")
-                            else:
-                                status_placeholder.error("Failed to connect to repository. Please check the URL and try again.")
                                 
                         except Exception as e:
                             st.session_state.github_operation_active = False

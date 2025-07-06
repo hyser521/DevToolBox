@@ -256,7 +256,8 @@ def main():
                                             python_code = combined_code
                                             uploaded_filename = combined_filename
                                             
-                                            st.success(f"Ready to analyze {len(selected_files)} files from {repo_name}")
+                                            st.success(f"✓ Generated documentation for {len(selected_files)} files from {repo_name}")
+                                            st.info("📥 Scroll down to see the generated documentation and download options")
                                     else:
                                         st.warning("No Python files found in this repository")
                                 else:
@@ -279,6 +280,10 @@ def main():
         st.header("Generated Documentation")
         
         if python_code:
+            # Show source indicator for GitHub repositories
+            if input_method == "GitHub Repository" and uploaded_filename:
+                st.info(f"📁 Documentation for: {uploaded_filename}")
+                st.caption("Download options will appear below after generation")
             try:
                 # Parse the Python code
                 parser = PythonASTParser()
@@ -336,26 +341,36 @@ def main():
                     
                     export_handler = ExportHandler()
                     
+                    # Create appropriate filename based on source
+                    base_filename = uploaded_filename or "documentation"
+                    if base_filename.endswith('.py'):
+                        base_filename = base_filename[:-3]  # Remove .py extension
+                    
                     if export_format == "Markdown":
                         file_content = documentation
-                        file_name = "documentation.md"
+                        file_name = f"{base_filename}.md"
                         mime_type = "text/markdown"
                     elif export_format == "HTML":
                         file_content = export_handler.to_html(documentation)
-                        file_name = "documentation.html"
+                        file_name = f"{base_filename}.html"
                         mime_type = "text/html"
                     else:  # JSON
                         file_content = export_handler.to_json(parsed_data)
-                        file_name = "documentation.json"
+                        file_name = f"{base_filename}.json"
                         mime_type = "application/json"
                     
                     col_dl1, col_dl2 = st.columns(2)
                     with col_dl1:
+                        download_label = f"📥 Download {export_format}"
+                        if input_method == "GitHub Repository":
+                            download_label = f"📥 Download Repository Docs ({export_format})"
+                        
                         st.download_button(
-                            label=f"Download {export_format}",
+                            label=download_label,
                             data=file_content,
                             file_name=file_name,
-                            mime=mime_type
+                            mime=mime_type,
+                            type="primary"
                         )
                     
                     # Show database save info

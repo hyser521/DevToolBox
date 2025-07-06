@@ -107,6 +107,12 @@ Changelog:
   * AI-Enhanced Documentation Generator (OpenAI GPT-4o integration)
   * Smart Code Pattern Recognition (design patterns, code smells, architecture analysis)
   * Automated GitHub Integration (PR analysis, repository monitoring, automated workflows)
+- July 06, 2025. Added GitHub repository documentation from URLs:
+  * Third input method for analyzing public GitHub repositories
+  * Recursive Python file discovery and content extraction
+  * Repository statistics and file selection interface
+  * Enhanced download functionality with repository-specific filenames
+  * Integrated with existing documentation pipeline for comprehensive analysis
 
 ## User Preferences
 

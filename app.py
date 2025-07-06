@@ -54,21 +54,56 @@ def main():
         else:
             save_to_db = False
             filename_input = ""
+        
+        # Search functionality (available even if database is not available, but will show error)
+        if db_available:
+            st.divider()
+            st.subheader("🔍 Search Analyses")
+            search_query = st.text_input("Search by filename or content:", placeholder="e.g., calculator.py")
+            
+            if search_query.strip():
+                try:
+                    search_results = db.search_analyses(search_query, limit=10)
+                    st.write(f"Found {len(search_results)} results:")
+                    
+                    for analysis in search_results:
+                        with st.expander(f"🔍 {analysis.filename or 'Untitled'} - {analysis.created_at.strftime('%m/%d %H:%M')}"):
+                            st.write(f"**ID:** {analysis.id}")
+                            st.write(f"**Filename:** {analysis.filename or 'No filename'}")
+                            st.write(f"**Format:** {analysis.export_format}")
+                            st.write(f"**Functions:** {len(analysis.parsed_data.get('functions', []))}")
+                            st.write(f"**Classes:** {len(analysis.parsed_data.get('classes', []))}")
+                            
+                            # Show a preview of the source code
+                            code_preview = analysis.source_code[:200] + "..." if len(analysis.source_code) > 200 else analysis.source_code
+                            st.code(code_preview, language="python")
+                            
+                            if st.button(f"Load Analysis {analysis.id}", key=f"search_load_{analysis.id}"):
+                                st.session_state.loaded_analysis = analysis
+                                st.rerun()
+                except Exception as e:
+                    st.error(f"Search error: {str(e)}")
             
             # Recent analyses
-            st.subheader("Recent Analyses")
-            if st.button("Refresh History"):
-                st.rerun()
+            st.subheader("📋 Recent Analyses")
+            col_refresh, col_clear = st.columns(2)
+            with col_refresh:
+                if st.button("Refresh"):
+                    st.rerun()
+            with col_clear:
+                if st.button("Clear Search"):
+                    st.rerun()
             
             try:
                 recent_analyses = db.get_recent_analyses(5)
                 for analysis in recent_analyses:
-                    with st.expander(f"{analysis.filename or 'Untitled'} - {analysis.created_at.strftime('%m/%d %H:%M')}"):
+                    with st.expander(f"📄 {analysis.filename or 'Untitled'} - {analysis.created_at.strftime('%m/%d %H:%M')}"):
                         st.write(f"**ID:** {analysis.id}")
+                        st.write(f"**Filename:** {analysis.filename or 'No filename'}")
                         st.write(f"**Format:** {analysis.export_format}")
                         st.write(f"**Functions:** {len(analysis.parsed_data.get('functions', []))}")
                         st.write(f"**Classes:** {len(analysis.parsed_data.get('classes', []))}")
-                        if st.button(f"Load Analysis {analysis.id}", key=f"load_{analysis.id}"):
+                        if st.button(f"Load Analysis {analysis.id}", key=f"recent_load_{analysis.id}"):
                             st.session_state.loaded_analysis = analysis
                             st.rerun()
             except Exception as e:
@@ -101,12 +136,14 @@ def main():
         )
         
         python_code = ""
+        uploaded_filename = None
         
         # Check if we have a loaded analysis from session state
         if 'loaded_analysis' in st.session_state and st.session_state.loaded_analysis:
             analysis = st.session_state.loaded_analysis
             st.info(f"📂 Loaded analysis from database (ID: {analysis.id})")
             python_code = analysis.source_code
+            uploaded_filename = analysis.filename
             
             # Update options to match the loaded analysis
             if hasattr(analysis, 'complexity_included'):
@@ -131,6 +168,7 @@ def main():
             if uploaded_file is not None:
                 try:
                     python_code = str(uploaded_file.read(), "utf-8")
+                    uploaded_filename = uploaded_file.name
                     st.success(f"File '{uploaded_file.name}' uploaded successfully!")
                 except Exception as e:
                     st.error(f"Error reading file: {str(e)}")
@@ -185,11 +223,14 @@ def main():
                                 'docstrings': include_docstrings
                             }
                             
+                            # Use uploaded filename if available, otherwise use manual input
+                            save_filename = uploaded_filename or (filename_input if filename_input.strip() else None)
+                            
                             analysis_id = db.save_analysis(
                                 source_code=python_code,
                                 parsed_data=parsed_data,
                                 documentation=documentation,
-                                filename=filename_input if filename_input.strip() else None,
+                                filename=save_filename,
                                 export_format=export_format.lower(),
                                 options=analysis_options
                             )

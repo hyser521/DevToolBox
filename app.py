@@ -10,6 +10,7 @@ from utils.database import DatabaseManager
 from utils.ai_enhancer import AIDocumentationEnhancer
 from utils.pattern_analyzer import CodePatternAnalyzer
 from utils.github_integration import GitHubIntegration
+from utils.complexity_visualizer import ComplexityVisualizer
 
 def main():
     st.set_page_config(
@@ -136,7 +137,7 @@ def main():
         # Input method selection
         input_method = st.radio(
             "Choose input method:",
-            ["Upload File", "Paste Code"]
+            ["Upload File", "Paste Code", "GitHub Repository"]
         )
         
         python_code = ""
@@ -181,12 +182,153 @@ def main():
                 except Exception as e:
                     st.error(f"Error reading file: {str(e)}")
         
-        else:
+        elif input_method == "Paste Code":
             python_code = st.text_area(
                 "Paste your Python code here:",
                 height=400,
                 placeholder="def example_function(param1: str, param2: int = 10) -> str:\n    \"\"\"\n    Example function docstring.\n    \n    Args:\n        param1: Description of param1\n        param2: Description of param2\n    \n    Returns:\n        Description of return value\n    \"\"\"\n    return f'{param1}_{param2}'"
             )
+        
+        else:  # GitHub Repository
+            st.subheader("📡 GitHub Repository Analysis")
+            github_url = st.text_input(
+                "GitHub Repository URL:",
+                placeholder="https://github.com/owner/repository",
+                help="Enter a public GitHub repository URL to analyze and document all Python files"
+            )
+            
+            if github_url:
+                # Extract repo name from URL
+                try:
+                    repo_name = github_url.replace("https://github.com/", "").replace("http://github.com/", "")
+                    if repo_name.endswith('.git'):
+                        repo_name = repo_name[:-4]
+                    
+                    st.info(f"Repository: {repo_name}")
+                    
+                    analyze_col, cancel_col = st.columns([3, 1])
+                    
+                    with analyze_col:
+                        analyze_button = st.button("🔍 Analyze Repository", type="primary", key="analyze_repo")
+                    
+                    with cancel_col:
+                        if 'github_operation_active' in st.session_state and st.session_state.github_operation_active:
+                            if st.button("🛑 Cancel", type="secondary", key="cancel_repo"):
+                                if 'github_integration' in st.session_state:
+                                    st.session_state.github_integration.cancel_operation()
+                                st.session_state.github_operation_active = False
+                                st.warning("Operation cancelled")
+                                st.rerun()
+                    
+                    if analyze_button:
+                        # Initialize progress tracking
+                        progress_placeholder = st.empty()
+                        status_placeholder = st.empty()
+                        
+                        try:
+                            # Initialize GitHub integration
+                            github_integration = GitHubIntegration()
+                            st.session_state.github_integration = github_integration
+                            st.session_state.github_operation_active = True
+                            
+                            def progress_callback(message):
+                                progress_placeholder.info(f"📡 {message}")
+                            
+                            # Connect to repository
+                            try:
+                                if github_integration.connect_repository(repo_name):
+                                    status_placeholder.success(f"Successfully connected to {repo_name}")
+                                    
+                                    # Generate repository analysis report with progress and cancellation
+                                    repo_report = github_integration.generate_repository_report(
+                                        progress_callback=progress_callback,
+                                        max_files=15  # Limit to reduce API calls
+                                    )
+                            except Exception as connect_error:
+                                st.session_state.github_operation_active = False
+                                progress_placeholder.empty()
+                                
+                                error_msg = str(connect_error)
+                                if "rate limit" in error_msg.lower():
+                                    status_placeholder.error(
+                                        "⏱️ GitHub API rate limit exceeded. The free API allows 60 requests per hour. "
+                                        "Please wait about an hour or add a GitHub token in Replit Secrets for 5000 requests/hour."
+                                    )
+                                    st.info(
+                                        "💡 **Tip**: To get a GitHub token:\n"
+                                        "1. Go to GitHub.com → Settings → Developer settings → Personal access tokens\n"
+                                        "2. Generate a new token with 'public_repo' permission\n"
+                                        "3. Add it as GITHUB_TOKEN in your Replit Secrets"
+                                    )
+                                else:
+                                    status_placeholder.error(f"Connection failed: {error_msg}")
+                                return
+                                
+                            # Clear progress indicators
+                            progress_placeholder.empty()
+                            st.session_state.github_operation_active = False
+                            
+                            # Check if operation was cancelled
+                            if repo_report.get('cancelled'):
+                                status_placeholder.warning(repo_report.get('message', 'Operation was cancelled'))
+                            elif repo_report.get('error'):
+                                status_placeholder.error(f"Error: {repo_report['error']}")
+                            else:
+                                    # Store repository analysis in session state
+                                    st.session_state.repo_analysis = repo_report
+                                    st.session_state.repo_name = repo_name
+                                    
+                                    # Display repository summary
+                                    st.subheader("📊 Repository Summary")
+                                    col1, col2, col3, col4 = st.columns(4)
+                                    
+                                    with col1:
+                                        st.metric("Python Files", len(repo_report.get('python_files', [])))
+                                    with col2:
+                                        st.metric("Total Functions", repo_report.get('total_functions', 0))
+                                    with col3:
+                                        st.metric("Total Classes", repo_report.get('total_classes', 0))
+                                    with col4:
+                                        api_calls = repo_report.get('api_calls_made', 0)
+                                        st.metric("API Calls", api_calls, help="Number of GitHub API calls made (optimized to reduce rate limiting)")
+                                    
+                                    # Show file selection
+                                    python_files = repo_report.get('python_files', [])
+                                    if python_files:
+                                        st.subheader("📁 Select Files to Document")
+                                        selected_files = st.multiselect(
+                                            "Choose Python files:",
+                                            python_files,
+                                            default=python_files[:5] if len(python_files) <= 5 else python_files[:3],
+                                            help="Select files to include in documentation"
+                                        )
+                                        
+                                        if selected_files and st.button("📖 Generate Documentation"):
+                                            # Process selected files
+                                            combined_code = ""
+                                            combined_filename = f"{repo_name.replace('/', '_')}_analysis"
+                                            
+                                            for file_path in selected_files:
+                                                file_content = repo_report['file_contents'].get(file_path, '')
+                                                combined_code += f"# File: {file_path}\n{file_content}\n\n"
+                                            
+                                            python_code = combined_code
+                                            uploaded_filename = combined_filename
+                                            
+                                            st.success(f"✓ Generated documentation for {len(selected_files)} files from {repo_name}")
+                                            st.info("📥 Scroll down to see the generated documentation and download options")
+                                    else:
+                                        st.warning("No Python files found in this repository")
+                                
+                        except Exception as e:
+                            st.session_state.github_operation_active = False
+                            progress_placeholder.empty()
+                            status_placeholder.error(f"Error analyzing repository: {str(e)}")
+                            st.info("💡 Tip: Make sure the repository is public and the URL is correct")
+                                
+                except Exception as e:
+                    st.error(f"Invalid GitHub URL: {str(e)}")
+                    st.info("Please enter a valid GitHub repository URL (e.g., https://github.com/owner/repo)")
         
         if python_code:
             # Display syntax highlighted code
@@ -197,6 +339,10 @@ def main():
         st.header("Generated Documentation")
         
         if python_code:
+            # Show source indicator for GitHub repositories
+            if input_method == "GitHub Repository" and uploaded_filename:
+                st.info(f"📁 Documentation for: {uploaded_filename}")
+                st.caption("Download options will appear below after generation")
             try:
                 # Parse the Python code
                 parser = PythonASTParser()
@@ -254,26 +400,36 @@ def main():
                     
                     export_handler = ExportHandler()
                     
+                    # Create appropriate filename based on source
+                    base_filename = uploaded_filename or "documentation"
+                    if base_filename.endswith('.py'):
+                        base_filename = base_filename[:-3]  # Remove .py extension
+                    
                     if export_format == "Markdown":
                         file_content = documentation
-                        file_name = "documentation.md"
+                        file_name = f"{base_filename}.md"
                         mime_type = "text/markdown"
                     elif export_format == "HTML":
                         file_content = export_handler.to_html(documentation)
-                        file_name = "documentation.html"
+                        file_name = f"{base_filename}.html"
                         mime_type = "text/html"
                     else:  # JSON
                         file_content = export_handler.to_json(parsed_data)
-                        file_name = "documentation.json"
+                        file_name = f"{base_filename}.json"
                         mime_type = "application/json"
                     
                     col_dl1, col_dl2 = st.columns(2)
                     with col_dl1:
+                        download_label = f"📥 Download {export_format}"
+                        if input_method == "GitHub Repository":
+                            download_label = f"📥 Download Repository Docs ({export_format})"
+                        
                         st.download_button(
-                            label=f"Download {export_format}",
+                            label=download_label,
                             data=file_content,
                             file_name=file_name,
-                            mime=mime_type
+                            mime=mime_type,
+                            type="primary"
                         )
                     
                     # Show database save info
@@ -392,6 +548,121 @@ def main():
                         
                     except Exception as e:
                         st.error(f"Pattern Analysis error: {str(e)}")
+        
+        # Complexity Visualization Section
+        st.markdown("---")
+        st.header("📈 Interactive Complexity Visualization")
+        
+        complexity_col1, complexity_col2 = st.columns(2)
+        
+        with complexity_col1:
+            st.subheader("🎯 Complexity Overview")
+            
+            if st.button("🚀 Generate Complexity Visualizations", type="primary"):
+                with st.spinner("Creating beautiful visualizations..."):
+                    try:
+                        visualizer = ComplexityVisualizer()
+                        
+                        # Show playful progress indicators
+                        visualizer.create_animated_loading_indicator("🎨 Creating awesome charts...")
+                        
+                        # Create and display the complexity heatmap
+                        st.subheader("🔥 Complexity Heatmap")
+                        heatmap_fig = visualizer.create_complexity_heatmap(parsed_data)
+                        st.plotly_chart(heatmap_fig, use_container_width=True)
+                        
+                        # Create and display distribution charts
+                        st.subheader("📊 Complexity Distribution")
+                        dist_fig = visualizer.create_complexity_distribution(parsed_data)
+                        st.plotly_chart(dist_fig, use_container_width=True)
+                        
+                    except Exception as e:
+                        st.error(f"Visualization error: {str(e)}")
+        
+        with complexity_col2:
+            st.subheader("🎮 Interactive Function Analysis")
+            
+            functions = parsed_data.get('functions', [])
+            if functions:
+                # Function selector
+                function_names = [f.get('name', f'Function_{i}') for i, f in enumerate(functions)]
+                selected_function_name = st.selectbox(
+                    "Choose a function to analyze:",
+                    function_names,
+                    help="Select a function to see its detailed complexity profile"
+                )
+                
+                if st.button("🔍 Analyze Selected Function", type="secondary"):
+                    # Find selected function
+                    selected_function = None
+                    for func in functions:
+                        if func.get('name') == selected_function_name:
+                            selected_function = func
+                            break
+                    
+                    if selected_function:
+                        try:
+                            visualizer = ComplexityVisualizer()
+                            
+                            # Create radar chart for selected function
+                            st.subheader(f"🎯 Complexity Profile: {selected_function_name}")
+                            radar_fig = visualizer.create_complexity_radar_chart(selected_function)
+                            st.plotly_chart(radar_fig, use_container_width=True)
+                            
+                            # Show playful progress bars for metrics
+                            complexity = selected_function.get('complexity', {})
+                            
+                            st.subheader("📊 Detailed Metrics")
+                            visualizer.create_playful_progress_bar(
+                                complexity.get('cyclomatic_complexity', 0), 
+                                20, 
+                                "Cyclomatic Complexity", 
+                                "🔄"
+                            )
+                            
+                            visualizer.create_playful_progress_bar(
+                                complexity.get('cognitive_complexity', 0), 
+                                30, 
+                                "Cognitive Complexity", 
+                                "🧠"
+                            )
+                            
+                            visualizer.create_playful_progress_bar(
+                                complexity.get('max_nesting_depth', 0), 
+                                8, 
+                                "Nesting Depth", 
+                                "🏗️"
+                            )
+                            
+                            visualizer.create_playful_progress_bar(
+                                len(selected_function.get('parameters', [])), 
+                                10, 
+                                "Parameters", 
+                                "⚙️"
+                            )
+                            
+                            # Show complexity insights
+                            st.subheader("💡 Complexity Assessment")
+                            
+                            cyclomatic = complexity.get('cyclomatic_complexity', 0)
+                            cognitive = complexity.get('cognitive_complexity', 0)
+                            
+                            cyclomatic_category = visualizer.get_complexity_category(cyclomatic, 'cyclomatic')
+                            cognitive_category = visualizer.get_complexity_category(cognitive, 'cognitive')
+                            
+                            st.info(f"**Cyclomatic Complexity**: {cyclomatic_category}")
+                            st.info(f"**Cognitive Complexity**: {cognitive_category}")
+                            
+                        except Exception as e:
+                            st.error(f"Function analysis error: {str(e)}")
+            else:
+                st.info("No functions found to analyze")
+        
+        # Overall complexity insights
+        if functions:
+            st.markdown("---")
+            visualizer = ComplexityVisualizer()
+            visualizer.display_complexity_insights(parsed_data)
         
         # GitHub Integration Section
         st.markdown("---")
